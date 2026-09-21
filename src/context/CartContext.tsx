@@ -8,6 +8,8 @@ import {
 
 import type { Product } from "../types";
 
+import { getLineTotal } from "../utils/pricing";
+
 export interface CartItem {
   product: Product;
   quantity: number;
@@ -15,36 +17,61 @@ export interface CartItem {
 
 interface CartContextType {
   cartItems: CartItem[];
-  addToCart: (product: Product, quantity?: number) => void;
-  removeFromCart: (productId: number) => void;
-  updateQuantity: (productId: number, quantity: number) => void;
+
+  addToCart: (
+    product: Product,
+    quantity?: number
+  ) => void;
+
+  removeFromCart: (
+    productId: number
+  ) => void;
+
+  updateQuantity: (
+    productId: number,
+    quantity: number
+  ) => void;
+
   clearCart: () => void;
+
   cartCount: number;
+
   cartTotal: number;
 }
 
-const CartContext = createContext<CartContextType | undefined>(
-  undefined
-);
+const CartContext =
+  createContext<CartContextType | undefined>(
+    undefined
+  );
 
 export function CartProvider({
   children,
 }: {
   children: ReactNode;
 }) {
-  const [cartItems, setCartItems] = useState<CartItem[]>(() => {
-    const savedCart = localStorage.getItem("buildmart-cart");
+  const [cartItems, setCartItems] =
+    useState<CartItem[]>(() => {
+      const savedCart =
+        localStorage.getItem(
+          "buildmart-cart"
+        );
 
-    if (!savedCart) {
-      return [];
-    }
+      if (!savedCart) {
+        return [];
+      }
 
-    try {
-      return JSON.parse(savedCart);
-    } catch {
-      return [];
-    }
-  });
+      try {
+        return JSON.parse(savedCart);
+      } catch {
+        return [];
+      }
+    });
+
+  /*
+  =========================================================
+  SAVE CART
+  =========================================================
+  */
 
   useEffect(() => {
     localStorage.setItem(
@@ -53,85 +80,176 @@ export function CartProvider({
     );
   }, [cartItems]);
 
+  /*
+  =========================================================
+  ADD TO CART
+  =========================================================
+  */
+
   const addToCart = (
     product: Product,
     quantity: number = 1
   ) => {
-    setCartItems((currentItems) => {
-      const existingItem = currentItems.find(
-        (item) => item.product.id === product.id
-      );
+    const safeQuantity = Math.max(
+      1,
+      Math.floor(quantity)
+    );
 
-      if (existingItem) {
-        return currentItems.map((item) =>
-          item.product.id === product.id
-            ? {
-                ...item,
-                quantity: item.quantity + quantity,
-              }
-            : item
-        );
+    setCartItems(
+      (currentItems) => {
+        const existingItem =
+          currentItems.find(
+            (item) =>
+              item.product.id ===
+              product.id
+          );
+
+        if (existingItem) {
+          return currentItems.map(
+            (item) =>
+              item.product.id ===
+              product.id
+                ? {
+                    ...item,
+
+                    /*
+                    IMPORTANT:
+
+                    If 30 are already in the
+                    cart and another 70 are
+                    added, quantity becomes
+                    100.
+
+                    Pricing will therefore
+                    automatically move to
+                    the 100-unit tier.
+                    */
+
+                    quantity:
+                      item.quantity +
+                      safeQuantity,
+                  }
+                : item
+          );
+        }
+
+        return [
+          ...currentItems,
+
+          {
+            product,
+            quantity: safeQuantity,
+          },
+        ];
       }
-
-      return [
-        ...currentItems,
-        {
-          product,
-          quantity,
-        },
-      ];
-    });
-  };
-
-  const removeFromCart = (productId: number) => {
-    setCartItems((currentItems) =>
-      currentItems.filter(
-        (item) => item.product.id !== productId
-      )
     );
   };
+
+  /*
+  =========================================================
+  REMOVE
+  =========================================================
+  */
+
+  const removeFromCart = (
+    productId: number
+  ) => {
+    setCartItems(
+      (currentItems) =>
+        currentItems.filter(
+          (item) =>
+            item.product.id !==
+            productId
+        )
+    );
+  };
+
+  /*
+  =========================================================
+  UPDATE QUANTITY
+  =========================================================
+  */
 
   const updateQuantity = (
     productId: number,
     quantity: number
   ) => {
-    if (quantity <= 0) {
+    const safeQuantity =
+      Math.floor(quantity);
+
+    if (safeQuantity <= 0) {
       removeFromCart(productId);
       return;
     }
 
-    setCartItems((currentItems) =>
-      currentItems.map((item) =>
-        item.product.id === productId
-          ? { ...item, quantity }
-          : item
-      )
+    setCartItems(
+      (currentItems) =>
+        currentItems.map(
+          (item) =>
+            item.product.id ===
+            productId
+              ? {
+                  ...item,
+                  quantity:
+                    safeQuantity,
+                }
+              : item
+        )
     );
   };
+
+  /*
+  =========================================================
+  CLEAR CART
+  =========================================================
+  */
 
   const clearCart = () => {
     setCartItems([]);
   };
 
-  const cartCount = cartItems.reduce(
-    (total, item) => total + item.quantity,
-    0
-  );
+  /*
+  =========================================================
+  CART COUNT
+  =========================================================
+  */
 
-  const cartTotal = cartItems.reduce(
-    (total, item) =>
-      total + item.product.price * item.quantity,
-    0
-  );
+  const cartCount =
+    cartItems.reduce(
+      (total, item) =>
+        total + item.quantity,
+      0
+    );
+
+  /*
+  =========================================================
+  CART TOTAL
+
+  Uses LIVE BULK PRICING.
+  =========================================================
+  */
+
+  const cartTotal =
+    cartItems.reduce(
+      (total, item) =>
+        total +
+        getLineTotal(
+          item.product,
+          item.quantity
+        ),
+      0
+    );
 
   return (
     <CartContext.Provider
       value={{
         cartItems,
+
         addToCart,
         removeFromCart,
         updateQuantity,
         clearCart,
+
         cartCount,
         cartTotal,
       }}
@@ -142,7 +260,8 @@ export function CartProvider({
 }
 
 export function useCart() {
-  const context = useContext(CartContext);
+  const context =
+    useContext(CartContext);
 
   if (!context) {
     throw new Error(
